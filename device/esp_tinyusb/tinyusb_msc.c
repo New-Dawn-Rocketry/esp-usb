@@ -492,7 +492,7 @@ void msc_storage_mount_to_app(void)
     }
 
     for (uint8_t i = 0; i < TINYUSB_MSC_STORAGE_MAX_LUNS; i++) {
-        if (p_msc_driver->dynamic.storage[i] != NULL && !p_msc_driver->constant.flags.lun0_auto_mount_off) {
+        if (p_msc_driver->dynamic.storage[i] != NULL && !p_msc_driver->constant.flags.auto_mount_off) {
             if (msc_storage_mount(p_msc_driver->dynamic.storage[i]) != ESP_OK) {
                 ESP_LOGW(TAG, "Unable to mount storage to app");
                 tinyusb_event_cb(p_msc_driver->dynamic.storage[i], TINYUSB_MSC_EVENT_MOUNT_FAILED);
@@ -508,7 +508,7 @@ void msc_storage_mount_to_usb(void)
     }
 
     for (uint8_t i = 0; i < TINYUSB_MSC_STORAGE_MAX_LUNS; i++) {
-        if (p_msc_driver->dynamic.storage[i] != NULL && !p_msc_driver->constant.flags.lun0_auto_mount_off) {
+        if (p_msc_driver->dynamic.storage[i] != NULL && !p_msc_driver->constant.flags.auto_mount_off) {
             if (msc_storage_unmount(p_msc_driver->dynamic.storage[i]) != ESP_OK) {
                 ESP_LOGW(TAG, "Unable to mount storage to usb");
                 tinyusb_event_cb(p_msc_driver->dynamic.storage[i], TINYUSB_MSC_EVENT_MOUNT_FAILED);
@@ -550,7 +550,7 @@ esp_err_t tinyusb_msc_install_driver(const tinyusb_msc_driver_config_t *config)
         msc_driver->constant.event_cb = config->callback;
         msc_driver->constant.event_arg = config->callback_arg;
     }
-    // TODO: Multiple LUNs support
+
     msc_driver->dynamic.lun_count = 0; // LUN will be added with storage initialization
     msc_driver->constant.flags.val = (uint16_t) config->user_flags.val; // Config flags for the MSC driver
 
