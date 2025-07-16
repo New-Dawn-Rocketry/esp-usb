@@ -44,6 +44,7 @@ static const char *TAG = "tinyusb_msc_storage";
  */
 typedef struct {
     uint8_t data_buffer[MSC_STORAGE_BUFFER_SIZE]; /*!< Buffer to store write data. The size is defined by MSC_STORAGE_BUFFER_SIZE. */
+    uint8_t lun;                           /*!< Logical Unit Number (LUN) for the current write operation. */
     uint32_t lba;                          /*!< Logical Block Address for the current WRITE10 operation. */
     uint32_t offset;                       /*!< Offset within the specified LBA for the current write operation. */
     uint32_t bufsize;                      /*!< Number of bytes to be written in this operation. */
@@ -101,7 +102,6 @@ typedef struct {
 static tinyusb_msc_driver_t *p_msc_driver;
 
 // List of TODOs:
-// 1.TODO: Multiple LUNs support
 // 2.TODO: Critical section to protect the driver pointer
 // 3.TODO: Critical section to protect the callback
 
@@ -208,9 +208,8 @@ static inline esp_err_t msc_storage_unmap_from_lun(msc_storage_obj_t *storage)
  */
 static inline esp_err_t msc_storage_read_sector(uint8_t lun, uint32_t lba, uint32_t offset, size_t size, void *dest)
 {
-    (void) lun; // Not used, as we support only one LUN
     msc_storage_obj_t *storage;
-    ESP_ERROR_CHECK(msc_storage_get_by_lun(0, &storage));
+    ESP_RETURN_ON_ERROR(msc_storage_get_by_lun(lun, &storage), TAG, "Failed to get storage by LUN %d", lun);
     return storage->medium->read(lba, offset, size, dest);
 }
 
@@ -227,9 +226,8 @@ static inline esp_err_t msc_storage_read_sector(uint8_t lun, uint32_t lba, uint3
  */
 static inline esp_err_t msc_storage_write_sector(uint8_t lun, uint32_t lba, uint32_t offset, size_t size, const void *src)
 {
-    (void) lun; // Not used, as we support only one LUN
     msc_storage_obj_t *storage;
-    ESP_ERROR_CHECK(msc_storage_get_by_lun(0, &storage));
+    ESP_RETURN_ON_ERROR(msc_storage_get_by_lun(lun, &storage), TAG, "Failed to get storage by LUN %d", lun);
     return storage->medium->write(lba, offset, size, src);
 }
 
@@ -247,7 +245,7 @@ static void tusb_write_func(void *param)
     assert(param); // Ensure param is not NULL
     msc_storage_obj_t *storage = (msc_storage_obj_t *)param;
     esp_err_t err = msc_storage_write_sector(
-                        0, // LUN is not used, as we support only one LUN
+                        storage->storage_buffer.lun,
                         storage->storage_buffer.lba,
                         storage->storage_buffer.offset,
                         storage->storage_buffer.bufsize,
@@ -260,9 +258,8 @@ static void tusb_write_func(void *param)
 
 static inline esp_err_t msc_storage_write_sector_deferred(uint8_t lun, uint32_t lba, uint32_t offset, size_t size, const void *src)
 {
-    (void) lun; // Not used, as we support only one LUN
     msc_storage_obj_t *storage;
-    ESP_ERROR_CHECK(msc_storage_get_by_lun(0, &storage));
+    ESP_RETURN_ON_ERROR(msc_storage_get_by_lun(lun, &storage), TAG, "Failed to get storage by LUN %d", lun);
 
     // As we defer the write operation to the TinyUSB task, we need to ensure that
     // the address does not overflow for SPI Flash storage medium
@@ -276,6 +273,7 @@ static inline esp_err_t msc_storage_write_sector_deferred(uint8_t lun, uint32_t 
 
     // Copy data to the buffer
     memcpy((void *)storage->storage_buffer.data_buffer, src, size);
+    storage->storage_buffer.lun = lun;
     storage->storage_buffer.lba = lba;
     storage->storage_buffer.offset = offset;
     storage->storage_buffer.bufsize = size;
@@ -690,12 +688,11 @@ esp_err_t tinyusb_msc_delete_storage(tinyusb_msc_storage_handle_t handle)
 
 esp_err_t tinyusb_msc_get_storage_capacity(tinyusb_msc_storage_handle_t handle, uint32_t *sector_count)
 {
-    (void) handle; // Unused parameter, we use the global s_storage_handle
     ESP_RETURN_ON_FALSE(p_msc_driver != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC driver is not initialized");
+    ESP_RETURN_ON_FALSE(handle != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC storage is not initialized");
     ESP_RETURN_ON_FALSE(sector_count != NULL, ESP_ERR_INVALID_ARG, TAG, "Sector count pointer can't be NULL");
 
-    msc_storage_obj_t *storage = p_msc_driver->dynamic.storage[0];
-    ESP_RETURN_ON_FALSE(storage != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC storage is not initialized");
+    msc_storage_obj_t *storage = (msc_storage_obj_t *) handle;
     *sector_count = storage->sector_count;
 
     return ESP_OK;
@@ -703,12 +700,11 @@ esp_err_t tinyusb_msc_get_storage_capacity(tinyusb_msc_storage_handle_t handle, 
 
 esp_err_t tinyusb_msc_get_storage_sector_size(tinyusb_msc_storage_handle_t handle, uint32_t *sector_size)
 {
-    (void) handle; // Unused parameter, we use the global s_storage_handle
     ESP_RETURN_ON_FALSE(p_msc_driver != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC driver is not initialized");
+    ESP_RETURN_ON_FALSE(handle != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC storage is not initialized");
     ESP_RETURN_ON_FALSE(sector_size != NULL, ESP_ERR_INVALID_ARG, TAG, "Sector size pointer can't be NULL");
 
-    msc_storage_obj_t *storage = p_msc_driver->dynamic.storage[0];
-    ESP_RETURN_ON_FALSE(storage != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC storage is not initialized");
+    msc_storage_obj_t *storage = (msc_storage_obj_t *) handle;
     *sector_size = storage->sector_size;
 
     return ESP_OK;
@@ -741,12 +737,11 @@ esp_err_t tinyusb_msc_set_storage_mount_point(tinyusb_msc_storage_handle_t handl
 esp_err_t tinyusb_msc_config_storage_fat_fs(tinyusb_msc_storage_handle_t handle,
         tinyusb_msc_fatfs_config_t *fatfs_config)
 {
-    (void) handle; // Unused parameter, we use the global s_storage_handle
     ESP_RETURN_ON_FALSE(p_msc_driver != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC driver is not initialized");
     ESP_RETURN_ON_FALSE(fatfs_config != NULL, ESP_ERR_INVALID_ARG, TAG, "FatFS config pointer can't be NULL");
 
     // 2.TODO: Critical section to protect the storage object
-    msc_storage_obj_t *storage = p_msc_driver->dynamic.storage[0];
+    msc_storage_obj_t *storage = (msc_storage_obj_t *) handle;
     ESP_RETURN_ON_FALSE(storage != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC storage is not initialized");
     // In case the user does not set mount_config.max_files
     // and for backward compatibility with versions <1.4.2
@@ -773,11 +768,10 @@ esp_err_t tinyusb_msc_config_storage_fat_fs(tinyusb_msc_storage_handle_t handle,
 esp_err_t tinyusb_msc_get_storage_mount_point(tinyusb_msc_storage_handle_t handle,
         tinyusb_msc_mount_point_t *mount_point)
 {
-    (void) handle; // Unused parameter, we use the global s_storage_handle
     ESP_RETURN_ON_FALSE(p_msc_driver != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC driver is not initialized");
     ESP_RETURN_ON_FALSE(mount_point != NULL, ESP_ERR_INVALID_ARG, TAG, "Mount point pointer can't be NULL");
 
-    msc_storage_obj_t *storage = p_msc_driver->dynamic.storage[0];
+    msc_storage_obj_t *storage = (msc_storage_obj_t *) handle;
     ESP_RETURN_ON_FALSE(storage != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC storage is not initialized");
     *mount_point = storage->mount_point;
 
@@ -786,16 +780,15 @@ esp_err_t tinyusb_msc_get_storage_mount_point(tinyusb_msc_storage_handle_t handl
 
 esp_err_t tinyusb_msc_format_storage(tinyusb_msc_storage_handle_t handle)
 {
-    (void) handle; // Unused parameter
+    ESP_RETURN_ON_FALSE(p_msc_driver != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC driver is not initialized");
+    ESP_RETURN_ON_FALSE(handle != NULL, ESP_ERR_INVALID_ARG, TAG, "Storage handle can't be NULL");
+    msc_storage_obj_t *storage = (msc_storage_obj_t *) handle;
 
     esp_err_t ret;
     FATFS *fs = NULL;
     BYTE pdrv = 0xFF;
 
-    ESP_RETURN_ON_FALSE(p_msc_driver != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC driver is not initialized");
-    ESP_RETURN_ON_FALSE(p_msc_driver->dynamic.storage != NULL, ESP_ERR_INVALID_STATE, TAG, "MSC storage is not initialized");
 
-    msc_storage_obj_t *storage = p_msc_driver->dynamic.storage;
     const char *base_path = storage->fat_fs.base_path;
     int max_files = storage->fat_fs.max_files;
 
@@ -875,14 +868,16 @@ bool tud_msc_test_unit_ready_cb(uint8_t lun)
 // Application update block count and block size
 void tud_msc_capacity_cb(uint8_t lun, uint32_t *block_count, uint16_t *block_size)
 {
-    (void) lun;
+    msc_storage_obj_t *storage;
 
     uint32_t capacity = 0;
     uint32_t sec_size = 0;
 
     // Do not verify the error, if the storage is not initialized, it will return 0 for both sector count and size
-    tinyusb_msc_get_storage_capacity(NULL, &capacity);
-    tinyusb_msc_get_storage_sector_size(NULL, &sec_size);
+    if (msc_storage_get_by_lun(lun, &storage) == ESP_OK) {
+        tinyusb_msc_get_storage_capacity((tinyusb_msc_storage_handle_t) storage, &capacity);
+        tinyusb_msc_get_storage_sector_size((tinyusb_msc_storage_handle_t) storage, &sec_size);
+    }
 
     *block_count = capacity;
     *block_size  = (uint16_t)sec_size;
@@ -922,7 +917,6 @@ int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset, void *buff
 // - Application write data from buffer to address contents (up to bufsize) and return number of written byte.
 int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t *buffer, uint32_t bufsize)
 {
-    (void) lun; // LUN is not used, as we support only one LUN
     // There is no way to return the error from the deferred function, so we need to check everything here
     if (bufsize > MSC_STORAGE_BUFFER_SIZE) {
         ESP_LOGE(TAG, "Buffer size %"PRIu32" exceeds maximum allowed size %d", bufsize, MSC_STORAGE_BUFFER_SIZE);

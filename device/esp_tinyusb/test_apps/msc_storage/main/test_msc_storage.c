@@ -351,8 +351,8 @@ TEST_CASE("MSC: storage SD/MMC", "[storage][sdmmc]")
     uint32_t capacity = 0;
     uint32_t sector_size = 0;
 
-    TEST_ASSERT_EQUAL(ESP_OK, tinyusb_msc_get_storage_capacity(NULL, &capacity));
-    TEST_ASSERT_EQUAL(ESP_OK, tinyusb_msc_get_storage_sector_size(NULL, &sector_size));
+    TEST_ASSERT_EQUAL(ESP_OK, tinyusb_msc_get_storage_capacity(storage_hdl, &capacity));
+    TEST_ASSERT_EQUAL(ESP_OK, tinyusb_msc_get_storage_sector_size(storage_hdl, &sector_size));
 
     TEST_ASSERT_EQUAL_MESSAGE(card->csd.capacity, capacity, "SDMMC card capacity does not match TinyUSB MSC storage sector count");
     TEST_ASSERT_EQUAL_MESSAGE(card->csd.sector_size, sector_size, "SDMMC card sector size does not match TinyUSB MSC storage sector size");
