@@ -3,7 +3,7 @@ repos:
     rev: v1.0.5
     hooks:
     -   id: astyle_py
-        args: ['--style=otbs', '--attach-namespaces', '--attach-classes', '--indent=spaces=4', '--convert-tabs', '--align-pointer=name', '--align-reference=name', '--keep-one-line-statements', '--pad-header', '--pad-oper']
+        args: ['--style=otbs', '--attach-namespaces', '--attach-classes', '--indent=spaces=4', '--convert-tabs', '--align-pointer=name', '--align-reference=name', '--keep-one-line-statements', '--pad-header', '--pad-oper', '--max-continuation-indent=120']
 
 -   repo: https://github.com/codespell-project/codespell
     rev: v2.2.6
