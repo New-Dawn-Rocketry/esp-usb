@@ -29,3 +29,9 @@ repos:
         args: ['--fix=lf']
         description: Forces to replace line ending by the UNIX 'lf' character
         exclude: '.*\.uxf'
+
+- repo: https://github.com/espressif/esp-idf-kconfig.git
+  rev: v2.5.0
+  hooks:
+    - id: check-kconfig-files
+    - id: check-deprecated-kconfig-options

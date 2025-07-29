@@ -941,9 +941,9 @@ static esp_err_t _uac_host_device_connected(uint8_t addr)
 
     // Create UAC interfaces list in RAM, connected to the particular USB dev
     if (is_uac_device) {
-#ifdef CONFIG_PRINTF_UAC_CONFIGURATION_DESCRIPTOR
+#ifdef CONFIG_UAC_PRINTF_CONFIGURATION_DESCRIPTOR
         print_uac_descriptors(config_desc);
-#endif
+#endif // CONFIG_UAC_PRINTF_CONFIGURATION_DESCRIPTOR
         // Create Interfaces list for a possibility to claim Interface
         UAC_RETURN_ON_ERROR(uac_host_interface_check(addr, config_desc), "uac stream interface not found");
     } else {
